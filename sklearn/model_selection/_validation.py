@@ -36,6 +36,13 @@ __all__ = ['cross_validate', 'cross_val_score', 'cross_val_predict',
            'permutation_test_score', 'learning_curve', 'validation_curve']
 
 
+def _set_fe_dict_param(estimator, dict_param, value):
+    param_name = 'featureextractor__experiment_framework_params'
+    dict_value = estimator.get_params()[param_name]
+    dict_value[dict_param] = value
+    estimator.set_params(**{param_name: dict_value})
+
+
 def cross_validate(estimator, X, y=None, groups=None, scoring=None, cv=None,
                    n_jobs=1, verbose=0, fit_params=None,
                    pre_dispatch='2*n_jobs', return_train_score="warn"):
@@ -198,12 +205,13 @@ def cross_validate(estimator, X, y=None, groups=None, scoring=None, cv=None,
     # independent, and that it is pickle-able.
     parallel = Parallel(n_jobs=n_jobs, verbose=verbose,
                         pre_dispatch=pre_dispatch)
+
     scores = parallel(
         delayed(_fit_and_score)(
             clone(estimator), X, y, scorers, train, test, verbose, None,
             fit_params, return_train_score=return_train_score,
-            return_times=True)
-        for train, test in cv.split(X, y, groups))
+            return_times=True, fold_num=i)
+        for i, (train, test) in enumerate(cv.split(X, y, groups)))
 
     if return_train_score:
         train_scores, test_scores, fit_times, score_times = zip(*scores)
@@ -346,7 +354,7 @@ def cross_val_score(estimator, X, y=None, groups=None, scoring=None, cv=None,
 def _fit_and_score(estimator, X, y, scorer, train, test, verbose,
                    parameters, fit_params, return_train_score=False,
                    return_parameters=False, return_n_test_samples=False,
-                   return_times=False, error_score='raise'):
+                   return_times=False, error_score='raise', fold_num=None):
     """Fit estimator and compute scores for a given dataset split.
 
     Parameters
@@ -425,18 +433,21 @@ def _fit_and_score(estimator, X, y, scorer, train, test, verbose,
     parameters : dict or None, optional
         The parameters that have been evaluated.
     """
+    if fold_num is not None:
+        _set_fe_dict_param(estimator, 'cv_fold', fold_num)
+
     if verbose > 1:
         if parameters is None:
             msg = ''
         else:
             msg = '%s' % (', '.join('%s=%s' % (k, v)
-                          for k, v in parameters.items()))
+                                    for k, v in parameters.items()))
         print("[CV] %s %s" % (msg, (64 - len(msg)) * '.'))
 
     # Adjust length of sample weights
     fit_params = fit_params if fit_params is not None else {}
     fit_params = dict([(k, _index_param_value(X, v, train))
-                      for k, v in fit_params.items()])
+                       for k, v in fit_params.items()])
 
     test_scores = {}
     train_scores = {}
@@ -452,6 +463,7 @@ def _fit_and_score(estimator, X, y, scorer, train, test, verbose,
     n_scorers = len(scorer.keys()) if is_multimetric else 1
 
     try:
+        _set_fe_dict_param(estimator, 'cv_stage', 0)
         if y_train is None:
             estimator.fit(X_train, **fit_params)
         else:
@@ -466,10 +478,10 @@ def _fit_and_score(estimator, X, y, scorer, train, test, verbose,
         elif isinstance(error_score, numbers.Number):
             if is_multimetric:
                 test_scores = dict(zip(scorer.keys(),
-                                   [error_score, ] * n_scorers))
+                                       [error_score, ] * n_scorers))
                 if return_train_score:
                     train_scores = dict(zip(scorer.keys(),
-                                        [error_score, ] * n_scorers))
+                                            [error_score, ] * n_scorers))
             else:
                 test_scores = error_score
                 if return_train_score:
@@ -484,6 +496,7 @@ def _fit_and_score(estimator, X, y, scorer, train, test, verbose,
 
     else:
         fit_time = time.time() - start_time
+        _set_fe_dict_param(estimator, 'cv_stage', 1)
         # _score will return dict if is_multimetric is True
         test_scores = _score(estimator, X_test, y_test, scorer, is_multimetric)
         score_time = time.time() - start_time - fit_time
@@ -742,7 +755,7 @@ def _fit_and_predict(estimator, X, y, train, test, verbose, fit_params,
     # Adjust length of sample weights
     fit_params = fit_params if fit_params is not None else {}
     fit_params = dict([(k, _index_param_value(X, v, train))
-                      for k, v in fit_params.items()])
+                       for k, v in fit_params.items()])
 
     X_train, y_train = _safe_split(estimator, X, y, train)
     X_test, _ = _safe_split(estimator, X, y, test, train)
@@ -778,16 +791,16 @@ def _fit_and_predict(estimator, X, y, train, test, verbose, fit_params,
                                      'Irregular decision_function outputs '
                                      'are not currently supported by '
                                      'cross_val_predict'.format(
-                                        predictions.shape, method,
-                                        len(estimator.classes_),
-                                        recommendation))
+                                         predictions.shape, method,
+                                         len(estimator.classes_),
+                                         recommendation))
                 if len(estimator.classes_) <= 2:
                     # In this special case, `predictions` contains a 1D array.
                     raise ValueError('Only {} class/es in training fold, this '
                                      'is not supported for decision_function '
                                      'with imbalanced folds. {}'.format(
-                                        len(estimator.classes_),
-                                        recommendation))
+                                         len(estimator.classes_),
+                                         recommendation))
 
             float_min = np.finfo(predictions.dtype).min
             default_values = {'decision_function': float_min,
@@ -1171,7 +1184,7 @@ def _translate_train_sizes(train_sizes, n_max_training_samples):
                              % (n_min_required_samples,
                                 n_max_required_samples))
         train_sizes_abs = (train_sizes_abs * n_max_training_samples).astype(
-                             dtype=np.int, copy=False)
+            dtype=np.int, copy=False)
         train_sizes_abs = np.clip(train_sizes_abs, 1,
                                   n_max_training_samples)
     else:
