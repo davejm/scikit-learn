@@ -38,7 +38,11 @@ __all__ = ['cross_validate', 'cross_val_score', 'cross_val_predict',
 
 def _set_fe_dict_param(estimator, dict_param, value):
     param_name = 'featureextractor__experiment_framework_params'
-    dict_value = estimator.get_params()[param_name]
+    params = estimator.get_params()
+    if param_name not in params:
+        return
+
+    dict_value = params[param_name]
     dict_value[dict_param] = value
     estimator.set_params(**{param_name: dict_value})
 
@@ -463,7 +467,7 @@ def _fit_and_score(estimator, X, y, scorer, train, test, verbose,
     n_scorers = len(scorer.keys()) if is_multimetric else 1
 
     try:
-        _set_fe_dict_param(estimator, 'cv_stage', 0)
+        _set_fe_dict_param(estimator, 'score_stage', 0)
         if y_train is None:
             estimator.fit(X_train, **fit_params)
         else:
@@ -495,8 +499,8 @@ def _fit_and_score(estimator, X, y, scorer, train, test, verbose,
                              " make sure that it has been spelled correctly.)")
 
     else:
+        _set_fe_dict_param(estimator, 'score_stage', 1)
         fit_time = time.time() - start_time
-        _set_fe_dict_param(estimator, 'cv_stage', 1)
         # _score will return dict if is_multimetric is True
         test_scores = _score(estimator, X_test, y_test, scorer, is_multimetric)
         score_time = time.time() - start_time - fit_time
@@ -1319,9 +1323,10 @@ def validation_curve(estimator, X, y, param_name, param_range, groups=None,
                         verbose=verbose)
     out = parallel(delayed(_fit_and_score)(
         clone(estimator), X, y, scorer, train, test, verbose,
-        parameters={param_name: v}, fit_params=None, return_train_score=True)
+        parameters={param_name: v}, fit_params=None, return_train_score=True,
+        fold_num=i)
         # NOTE do not change order of iteration to allow one time cv splitters
-        for train, test in cv.split(X, y, groups) for v in param_range)
+        for i, (train, test) in enumerate(cv.split(X, y, groups)) for v in param_range)
     out = np.asarray(out)
     n_params = len(param_range)
     n_cv_folds = out.shape[0] // n_params

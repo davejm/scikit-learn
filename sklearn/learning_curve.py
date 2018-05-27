@@ -167,8 +167,8 @@ def learning_curve(estimator, X, y, train_sizes=np.linspace(0.1, 1.0, 5),
         out = parallel(delayed(_fit_and_score)(
             clone(estimator), X, y, scorer, train[:n_train_samples], test,
             verbose, parameters=None, fit_params=None, return_train_score=True,
-            error_score=error_score)
-            for train, test in cv for n_train_samples in train_sizes_abs)
+            error_score=error_score, fold_num=i)
+            for i, (train, test) in enumerate(cv) for n_train_samples in train_sizes_abs)
         out = np.array(out)[:, :2]
         n_cv_folds = out.shape[0] // n_unique_ticks
         out = out.reshape(n_cv_folds, n_unique_ticks, 2)
@@ -214,7 +214,7 @@ def _translate_train_sizes(train_sizes, n_max_training_samples):
                              % (n_min_required_samples,
                                 n_max_required_samples))
         train_sizes_abs = (train_sizes_abs * n_max_training_samples).astype(
-                                 dtype=np.int, copy=False)
+            dtype=np.int, copy=False)
         train_sizes_abs = np.clip(train_sizes_abs, 1,
                                   n_max_training_samples)
     else:
@@ -349,8 +349,9 @@ def validation_curve(estimator, X, y, param_name, param_range, cv=None,
                         verbose=verbose)
     out = parallel(delayed(_fit_and_score)(
         clone(estimator), X, y, scorer, train, test, verbose,
-        parameters={param_name: v}, fit_params=None, return_train_score=True)
-        for train, test in cv for v in param_range)
+        parameters={param_name: v}, fit_params=None, return_train_score=True,
+        fold_num=i)
+        for i, (train, test) in enumerate(cv) for v in param_range)
 
     out = np.asarray(out)[:, :2]
     n_params = len(param_range)

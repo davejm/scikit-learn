@@ -229,6 +229,7 @@ class ParameterSampler(object):
     ...                  {'b': 1.038159, 'a': 2}]
     True
     """
+
     def __init__(self, param_distributions, n_iter, random_state=None):
         self.param_distributions = param_distributions
         self.n_iter = n_iter
@@ -570,9 +571,9 @@ class BaseSearchCV(six.with_metaclass(ABCMeta, BaseEstimator,
             delayed(_fit_and_score)(clone(base_estimator), X, y, self.scorer_,
                                     train, test, self.verbose, parameters,
                                     self.fit_params, return_parameters=True,
-                                    error_score=self.error_score)
-                for parameters in parameter_iterable
-                for train, test in cv)
+                                    error_score=self.error_score, fold_num=i)
+            for parameters in parameter_iterable
+            for i, (train, test) in enumerate(cv))
 
         # Out is a list of triplet: score, estimator, n_test_samples
         n_fits = len(out)

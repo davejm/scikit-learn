@@ -226,6 +226,7 @@ class ParameterSampler(object):
     ...                  {'b': 1.038159, 'a': 2}]
     True
     """
+
     def __init__(self, param_distributions, n_iter, random_state=None):
         self.param_distributions = param_distributions
         self.n_iter = n_iter
@@ -634,9 +635,9 @@ class BaseSearchCV(six.with_metaclass(ABCMeta, BaseEstimator,
                                   return_train_score=self.return_train_score,
                                   return_n_test_samples=True,
                                   return_times=True, return_parameters=False,
-                                  error_score=self.error_score)
-          for parameters, (train, test) in product(candidate_params,
-                                                   cv.split(X, y, groups)))
+                                  error_score=self.error_score, fold_num=i)
+          for parameters, (i, (train, test)) in product(candidate_params,
+                                                        enumerate(cv.split(X, y, groups))))
 
         # if one choose to see train score, "out" will contain train score info
         if self.return_train_score:
@@ -1364,10 +1365,10 @@ class RandomizedSearchCV(BaseSearchCV):
         self.n_iter = n_iter
         self.random_state = random_state
         super(RandomizedSearchCV, self).__init__(
-             estimator=estimator, scoring=scoring, fit_params=fit_params,
-             n_jobs=n_jobs, iid=iid, refit=refit, cv=cv, verbose=verbose,
-             pre_dispatch=pre_dispatch, error_score=error_score,
-             return_train_score=return_train_score)
+            estimator=estimator, scoring=scoring, fit_params=fit_params,
+            n_jobs=n_jobs, iid=iid, refit=refit, cv=cv, verbose=verbose,
+            pre_dispatch=pre_dispatch, error_score=error_score,
+            return_train_score=return_train_score)
 
     def _get_param_iterator(self):
         """Return ParameterSampler instance for the given distributions"""

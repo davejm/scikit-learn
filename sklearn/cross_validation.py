@@ -59,6 +59,17 @@ __all__ = ['KFold',
            'train_test_split']
 
 
+def _set_fe_dict_param(estimator, dict_param, value):
+    param_name = 'featureextractor__experiment_framework_params'
+    params = estimator.get_params()
+    if param_name not in params:
+        return
+
+    dict_value = params[param_name]
+    dict_value[dict_param] = value
+    estimator.set_params(**{param_name: dict_value})
+
+
 class _PartitionIterator(with_metaclass(ABCMeta)):
     """Base class for CV iterators where train_mask = ~test_mask
 
@@ -421,6 +432,7 @@ class LabelKFold(_BaseKFold):
     LeaveOneLabelOut for splitting the data according to explicit,
     domain-specific stratification of the dataset.
     """
+
     def __init__(self, labels, n_folds=3):
         super(LabelKFold, self).__init__(len(labels), n_folds,
                                          shuffle=False, random_state=None)
@@ -992,7 +1004,7 @@ def _approximate_mode(class_counts, n_draws, rng):
             floored[inds] += 1
             need_to_add -= add_now
             if need_to_add == 0:
-                    break
+                break
     return floored.astype(np.int)
 
 
@@ -1239,6 +1251,7 @@ class LabelShuffleSplit(ShuffleSplit):
         by `np.random`.
 
     """
+
     def __init__(self, labels, n_iter=5, test_size=0.2, train_size=None,
                  random_state=None):
 
@@ -1438,7 +1451,7 @@ def _fit_and_predict(estimator, X, y, train, test, verbose, fit_params):
     # Adjust length of sample weights
     fit_params = fit_params if fit_params is not None else {}
     fit_params = dict([(k, _index_param_value(X, v, train))
-                      for k, v in fit_params.items()])
+                       for k, v in fit_params.items()])
 
     X_train, y_train = _safe_split(estimator, X, y, train)
     X_test, _ = _safe_split(estimator, X, y, test, train)
@@ -1577,14 +1590,14 @@ def cross_val_score(estimator, X, y=None, scoring=None, cv=None, n_jobs=1,
                         pre_dispatch=pre_dispatch)
     scores = parallel(delayed(_fit_and_score)(clone(estimator), X, y, scorer,
                                               train, test, verbose, None,
-                                              fit_params)
-                      for train, test in cv)
+                                              fit_params, fold_num=i)
+                      for i, (train, test) in enumerate(cv))
     return np.array(scores)[:, 0]
 
 
 def _fit_and_score(estimator, X, y, scorer, train, test, verbose,
                    parameters, fit_params, return_train_score=False,
-                   return_parameters=False, error_score='raise'):
+                   return_parameters=False, error_score='raise', fold_num=None):
     """Fit estimator and compute scores for a given dataset split.
 
     Parameters
@@ -1647,18 +1660,21 @@ def _fit_and_score(estimator, X, y, scorer, train, test, verbose,
     parameters : dict or None, optional
         The parameters that have been evaluated.
     """
+    if fold_num is not None:
+        _set_fe_dict_param(estimator, 'cv_fold', fold_num)
+
     if verbose > 1:
         if parameters is None:
             msg = ''
         else:
             msg = '%s' % (', '.join('%s=%s' % (k, v)
-                          for k, v in parameters.items()))
+                                    for k, v in parameters.items()))
         print("[CV] %s %s" % (msg, (64 - len(msg)) * '.'))
 
     # Adjust length of sample weights
     fit_params = fit_params if fit_params is not None else {}
     fit_params = dict([(k, _index_param_value(X, v, train))
-                      for k, v in fit_params.items()])
+                       for k, v in fit_params.items()])
 
     if parameters is not None:
         estimator.set_params(**parameters)
@@ -1669,6 +1685,7 @@ def _fit_and_score(estimator, X, y, scorer, train, test, verbose,
     X_test, y_test = _safe_split(estimator, X, y, test, train)
 
     try:
+        _set_fe_dict_param(estimator, 'score_stage', 0)
         if y_train is None:
             estimator.fit(X_train, **fit_params)
         else:
@@ -1691,6 +1708,7 @@ def _fit_and_score(estimator, X, y, scorer, train, test, verbose,
                              )
 
     else:
+        _set_fe_dict_param(estimator, 'score_stage', 1)
         test_score = _score(estimator, X_test, y_test, scorer)
         if return_train_score:
             train_score = _score(estimator, X_train, y_train, scorer)
